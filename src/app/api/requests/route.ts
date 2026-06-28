@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await adminForCheck
       .from("writeoff_requests")
       .select("id, created_at, author:profiles!writeoff_requests_author_id_fkey(full_name)")
-      .eq("photo_hash", data.photo_hash)
+      .eq("photo_hash" as any, data.photo_hash)
       .limit(1)
       .maybeSingle();
     if (existing) {
