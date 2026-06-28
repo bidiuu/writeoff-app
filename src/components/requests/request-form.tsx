@@ -46,6 +46,7 @@ export function RequestForm() {
   const [employees, setEmployees]       = useState<Profile[]>([]);
   const [photoFile, setPhotoFile]         = useState<File | null>(null);
   const [hasCameraExif, setHasCameraExif] = useState<boolean | null>(null);
+  const [rawPhotoHash, setRawPhotoHash]   = useState<string | null>(null);
   const [productPrices, setProductPrices] = useState<{ id: string; name: string; unit: string; price_per_unit: number }[]>([]);
   const [selectedPriceId, setSelectedPriceId] = useState("");
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
@@ -162,9 +163,10 @@ export function RequestForm() {
     finally { setAiLoading(false); }
   }
 
-  async function handlePhotoSelected(file: File | null, hasExif: boolean) {
+  async function handlePhotoSelected(file: File | null, hasExif: boolean, rawHash: string | null) {
     setPhotoFile(file);
     setHasCameraExif(file ? hasExif : null);
+    setRawPhotoHash(file ? rawHash : null);
     setAiResult(null);
     setAiAccepted(false);
     if (!file || !isOnline || category !== "food") return;
@@ -195,12 +197,6 @@ export function RequestForm() {
     setAiAccepted(true);
   }
 
-  async function hashPhoto(file: File): Promise<string> {
-    const buffer = await file.arrayBuffer();
-    const digest = await crypto.subtle.digest("SHA-256", buffer);
-    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!category)                { toast.error("Выберите категорию товара"); return; }
@@ -213,7 +209,6 @@ export function RequestForm() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
       const photoPath = `${user.id}/${crypto.randomUUID()}.jpg`;
-      const photoHash = await hashPhoto(photoFile);
 
       if (!isOnline) {
         await enqueueRequest({
@@ -246,7 +241,7 @@ export function RequestForm() {
           category,
           has_camera_exif: hasCameraExif,
           estimated_cost: estimatedCost,
-          photo_hash: photoHash,
+          photo_hash: rawPhotoHash ?? undefined,
         }),
       });
       if (!res.ok) { const { error } = await res.json(); throw new Error(error ?? "Ошибка"); }

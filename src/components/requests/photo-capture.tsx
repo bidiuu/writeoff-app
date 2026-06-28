@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface PhotoCaptureProps {
-  onFile: (file: File | null, hasExif: boolean) => void;
+  onFile: (file: File | null, hasExif: boolean, rawHash: string | null) => void;
   disabled?: boolean;
 }
 
@@ -60,10 +60,14 @@ export function PhotoCapture({ onFile, disabled }: PhotoCaptureProps) {
       return;
     }
 
-    // Read EXIF from the raw file BEFORE compression strips it
-    const hasExif = raw.type === "image/jpeg"
-      ? detectCameraExif(await raw.arrayBuffer())
-      : false;
+    // Read raw bytes once — used for both EXIF detection and hashing
+    const rawBuf = await raw.arrayBuffer();
+    const hasExif = raw.type === "image/jpeg" ? detectCameraExif(rawBuf) : false;
+
+    // Hash the original file BEFORE compression (JPEG compression is non-deterministic
+    // so hashing the compressed output would produce a different hash each time).
+    const digest = await crypto.subtle.digest("SHA-256", rawBuf);
+    const rawHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 
     setCompressing(true);
     try {
@@ -75,10 +79,10 @@ export function PhotoCapture({ onFile, disabled }: PhotoCaptureProps) {
       });
       const url = URL.createObjectURL(compressed);
       setPreview(url);
-      onFile(compressed, hasExif);
+      onFile(compressed, hasExif, rawHash);
     } catch {
       setError("Ошибка при обработке фото");
-      onFile(null, false);
+      onFile(null, false, null);
     } finally {
       setCompressing(false);
     }
@@ -86,7 +90,7 @@ export function PhotoCapture({ onFile, disabled }: PhotoCaptureProps) {
 
   function handleClear() {
     setPreview(null);
-    onFile(null, false);
+    onFile(null, false, null);
     if (inputRef.current) inputRef.current.value = "";
   }
 

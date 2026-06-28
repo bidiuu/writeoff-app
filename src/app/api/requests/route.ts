@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden: store mismatch" }, { status: 403 });
   }
 
-  let isDuplicatePhoto = false;
   if (data.photo_hash) {
     const { data: existing } = await supabase
       .from("writeoff_requests")
@@ -55,7 +54,14 @@ export async function POST(request: NextRequest) {
       .eq("photo_hash", data.photo_hash)
       .limit(1)
       .maybeSingle();
-    isDuplicatePhoto = !!existing;
+    if (existing) {
+      // Remove the already-uploaded photo to avoid orphaned storage files
+      await supabase.storage.from("writeoff-photos").remove([data.photo_path]);
+      return NextResponse.json(
+        { error: "Это фото уже использовалось в предыдущей заявке. Загрузите новое фото." },
+        { status: 409 }
+      );
+    }
   }
 
   const insertPayload = {
@@ -72,7 +78,7 @@ export async function POST(request: NextRequest) {
     has_camera_exif: data.has_camera_exif ?? null,
     estimated_cost: data.estimated_cost ?? null,
     photo_hash: data.photo_hash ?? null,
-    is_duplicate_photo: isDuplicatePhoto,
+    is_duplicate_photo: false,
   };
 
   console.log("[DEBUG] auth.uid() from session:", user.id);
@@ -103,8 +109,8 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
     void notifyUsers({
       userIds: reviewers.map((r) => r.id),
-      title: isDuplicatePhoto ? "⚠️ Дубликат фото — новая заявка" : "Новая заявка на списание",
-      body: `${profile.full_name}: ${data.product_name} (${data.amount} ед.)${isDuplicatePhoto ? " — это фото уже использовалось ранее" : ""}`,
+      title: "Новая заявка на списание",
+      body: `${profile.full_name}: ${data.product_name} (${data.amount} ед.)`,
       url: "/requests/review",
     }).catch((err) => console.error("[requests/POST] notify (non-fatal):", err));
     void admin; // admin kept for push subscription cross-user read inside notifyUsers
