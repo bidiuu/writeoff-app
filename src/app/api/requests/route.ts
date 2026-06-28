@@ -48,17 +48,23 @@ export async function POST(request: NextRequest) {
   }
 
   if (data.photo_hash) {
-    const { data: existing } = await supabase
+    // Use admin client to bypass RLS — the regular supabase client only sees the
+    // current user's own rows, so cross-user duplicate detection would silently fail.
+    const adminForCheck = createAdminClient();
+    const { data: existing } = await adminForCheck
       .from("writeoff_requests")
-      .select("id")
+      .select("id, created_at, author:profiles!writeoff_requests_author_id_fkey(full_name)")
       .eq("photo_hash", data.photo_hash)
       .limit(1)
       .maybeSingle();
     if (existing) {
-      // Remove the already-uploaded photo to avoid orphaned storage files
       await supabase.storage.from("writeoff-photos").remove([data.photo_path]);
+      const date = new Date((existing as any).created_at).toLocaleDateString("ru-RU", {
+        day: "2-digit", month: "2-digit", year: "numeric",
+      });
+      const author = (existing as any).author?.full_name ?? "другой пользователь";
       return NextResponse.json(
-        { error: "Это фото уже использовалось в предыдущей заявке. Загрузите новое фото." },
+        { error: `Это фото уже использовалось в заявке от ${date} (${author}). Нельзя списать один и тот же товар повторно.` },
         { status: 409 }
       );
     }
@@ -92,6 +98,15 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
+    // PostgreSQL unique_violation code = 23505 — means the photo was inserted
+    // by a concurrent request between our check and this insert (race condition).
+    if (error.code === "23505" && error.message.includes("unique_photo_hash")) {
+      await supabase.storage.from("writeoff-photos").remove([data.photo_path]);
+      return NextResponse.json(
+        { error: "Это фото уже использовалось в предыдущей заявке. Загрузите новое фото." },
+        { status: 409 }
+      );
+    }
     console.error("[requests/POST] INSERT error — message:", error.message, "| code:", error.code, "| details:", error.details, "| hint:", error.hint);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
