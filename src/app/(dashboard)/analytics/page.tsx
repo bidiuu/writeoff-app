@@ -5,7 +5,7 @@ import { TopChart } from "@/components/dashboard/top-chart";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { ShiftChart } from "@/components/dashboard/shift-chart";
 import { EmployeeFilter } from "@/components/dashboard/employee-filter";
-import { Download, Clock } from "lucide-react";
+import { Download, Clock, ShieldAlert } from "lucide-react";
 
 async function getAnalyticsData() {
   const supabase = await createClient();
@@ -137,6 +137,13 @@ export default async function AnalyticsPage() {
     .eq("role", "sender")
     .order("full_name");
 
+  const { data: fraudAttempts } = await supabase
+    .from("audit_log")
+    .select("id, ts, payload")
+    .eq("action", "duplicate_photo_attempt")
+    .order("ts", { ascending: false })
+    .limit(5);
+
   const savings3pct = summary.estimatedCost * 0.03;
   const savings5pct = summary.estimatedCost * 0.05;
   const fmt = (n: number) =>
@@ -204,6 +211,51 @@ export default async function AnalyticsPage() {
       )}
 
       <EmployeeFilter employees={senders ?? []} />
+
+      {/* Fraud attempts section — visible only when there are incidents */}
+      <div className="rounded-2xl bg-white border border-border p-4 shadow-[0_1px_4px_oklch(0.16_0.02_35_/_6%)]">
+        <div className="flex items-center gap-1.5 mb-3">
+          <ShieldAlert size={13} strokeWidth={2} className="text-orange-500" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Попытки мошенничества
+          </p>
+          {fraudAttempts && fraudAttempts.length > 0 && (
+            <span className="ml-auto inline-flex items-center justify-center rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5">
+              {fraudAttempts.length}
+            </span>
+          )}
+        </div>
+        {!fraudAttempts || fraudAttempts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Попыток повторного использования фото не зафиксировано</p>
+        ) : (
+          <ul className="space-y-2">
+            {fraudAttempts.map((entry) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const p = entry.payload as any;
+              const attemptDate = new Date(entry.ts).toLocaleString("ru-RU", {
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit",
+              });
+              const origDate = p?.original_created_at
+                ? new Date(p.original_created_at).toLocaleDateString("ru-RU", {
+                    day: "2-digit", month: "2-digit", year: "numeric",
+                  })
+                : "неизвестно";
+              return (
+                <li key={entry.id} className="rounded-xl bg-orange-50 border border-orange-100 px-3 py-2 text-sm">
+                  <p className="font-semibold text-orange-800">{p?.attacker_name ?? "Неизвестный"}</p>
+                  <p className="text-xs text-orange-700 mt-0.5">
+                    Попытка: {attemptDate}
+                  </p>
+                  <p className="text-xs text-orange-600 mt-0.5">
+                    Фото из заявки от {origDate} ({p?.original_author ?? "другой пользователь"})
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
 
       <div className="text-xs text-muted-foreground text-center pb-2">
         Данные обновляются в реальном времени

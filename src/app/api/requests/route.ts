@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUsers } from "@/lib/push";
+import { sendTelegram } from "@/lib/telegram";
 
 const createSchema = z.object({
   store_id: z.string().uuid(),
@@ -59,12 +60,48 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (existing) {
       await supabase.storage.from("writeoff-photos").remove([data.photo_path]);
-      const date = new Date((existing as any).created_at).toLocaleDateString("ru-RU", {
+
+      const origDate = new Date((existing as any).created_at).toLocaleDateString("ru-RU", {
         day: "2-digit", month: "2-digit", year: "numeric",
       });
-      const author = (existing as any).author?.full_name ?? "другой пользователь";
+      const origAuthor = (existing as any).author?.full_name ?? "другой пользователь";
+
+      // 1. Audit log — use admin client because senders have no INSERT policy
+      void adminForCheck.from("audit_log").insert({
+        request_id: (existing as any).id,
+        actor_id: user.id,
+        action: "duplicate_photo_attempt",
+        payload: {
+          attacker_id: user.id,
+          attacker_name: profile.full_name,
+          original_request_id: (existing as any).id,
+          original_author: origAuthor,
+          original_created_at: (existing as any).created_at,
+        },
+      }).then(({ error: e }) => {
+        if (e) console.error("[duplicate] audit_log:", e.message);
+      });
+
+      // 2. Push notification to all reviewers/admins
+      const { data: reviewers } = await supabase
+        .from("profiles").select("id").in("role", ["reviewer", "admin"]);
+      if (reviewers?.length) {
+        void notifyUsers({
+          userIds: reviewers.map((r) => r.id),
+          title: "⚠️ Попытка дублирования фото",
+          body: `${profile.full_name} попытался использовать фото из заявки от ${origDate} (${origAuthor})`,
+          url: "/analytics",
+        }).catch((e) => console.error("[duplicate] push:", e));
+      }
+
+      // 3. Telegram (fire-and-forget, may not be configured)
+      void sendTelegram(
+        `⚠️ <b>Попытка дублирования фото</b>\n` +
+        `<b>${profile.full_name}</b> попытался создать заявку, используя фото из заявки от ${origDate} (${origAuthor})`
+      );
+
       return NextResponse.json(
-        { error: `Это фото уже использовалось в заявке от ${date} (${author}). Нельзя списать один и тот же товар повторно.` },
+        { error: `Это фото уже использовалось в заявке от ${origDate} (${origAuthor}). Нельзя списать один и тот же товар повторно.` },
         { status: 409 }
       );
     }
