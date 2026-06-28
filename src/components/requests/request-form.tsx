@@ -195,6 +195,12 @@ export function RequestForm() {
     setAiAccepted(true);
   }
 
+  async function hashPhoto(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!category)                { toast.error("Выберите категорию товара"); return; }
@@ -207,6 +213,7 @@ export function RequestForm() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
       const photoPath = `${user.id}/${crypto.randomUUID()}.jpg`;
+      const photoHash = await hashPhoto(photoFile);
 
       if (!isOnline) {
         await enqueueRequest({
@@ -239,6 +246,7 @@ export function RequestForm() {
           category,
           has_camera_exif: hasCameraExif,
           estimated_cost: estimatedCost,
+          photo_hash: photoHash,
         }),
       });
       if (!res.ok) { const { error } = await res.json(); throw new Error(error ?? "Ошибка"); }

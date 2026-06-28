@@ -15,6 +15,7 @@ const createSchema = z.object({
   category: z.enum(["food", "equipment", "supplies", "other"]).optional(),
   has_camera_exif: z.boolean().nullable().optional(),
   estimated_cost: z.number().positive().nullable().optional(),
+  photo_hash: z.string().length(64).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -46,6 +47,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden: store mismatch" }, { status: 403 });
   }
 
+  let isDuplicatePhoto = false;
+  if (data.photo_hash) {
+    const { data: existing } = await supabase
+      .from("writeoff_requests")
+      .select("id")
+      .eq("photo_hash", data.photo_hash)
+      .limit(1)
+      .maybeSingle();
+    isDuplicatePhoto = !!existing;
+  }
+
   const insertPayload = {
     store_id: data.store_id,
     author_id: user.id,
@@ -59,6 +71,8 @@ export async function POST(request: NextRequest) {
     category: data.category ?? null,
     has_camera_exif: data.has_camera_exif ?? null,
     estimated_cost: data.estimated_cost ?? null,
+    photo_hash: data.photo_hash ?? null,
+    is_duplicate_photo: isDuplicatePhoto,
   };
 
   console.log("[DEBUG] auth.uid() from session:", user.id);
@@ -89,8 +103,8 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
     void notifyUsers({
       userIds: reviewers.map((r) => r.id),
-      title: "Новая заявка на списание",
-      body: `${profile.full_name}: ${data.product_name} (${data.amount} ед.)`,
+      title: isDuplicatePhoto ? "⚠️ Дубликат фото — новая заявка" : "Новая заявка на списание",
+      body: `${profile.full_name}: ${data.product_name} (${data.amount} ед.)${isDuplicatePhoto ? " — это фото уже использовалось ранее" : ""}`,
       url: "/requests/review",
     }).catch((err) => console.error("[requests/POST] notify (non-fatal):", err));
     void admin; // admin kept for push subscription cross-user read inside notifyUsers

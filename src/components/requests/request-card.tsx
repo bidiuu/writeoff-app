@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle2, XCircle, Camera, CameraOff, Store, User, FileCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Camera, CameraOff, Store, User, FileCheck, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ interface Request {
   status: string;
   created_at: string;
   has_camera_exif?: boolean | null;
+  is_duplicate_photo?: boolean | null;
   iiko_doc_number?: string | null;
   iiko_status?: string | null;
   store: { name: string } | null;
@@ -114,6 +115,12 @@ export function RequestCard({ request, onUpdate, index = 0 }: RequestCardProps) 
           {isDeduction ? "С удержанием" : "Без удержания"}
         </span>
         <div className="flex items-center gap-2 flex-wrap">
+          {request.is_duplicate_photo && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+              <AlertTriangle size={10} strokeWidth={2} />
+              Дубликат фото
+            </span>
+          )}
           {request.iiko_doc_number && (
             <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
               <FileCheck size={10} strokeWidth={2} />
