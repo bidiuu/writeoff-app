@@ -4,5 +4,15 @@
 -- a hash (offline submissions, old rows) are unaffected.
 drop index if exists idx_writeoff_requests_photo_hash;
 
-alter table writeoff_requests
-  add constraint unique_photo_hash unique (photo_hash);
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'unique_photo_hash'
+      and conrelid = 'writeoff_requests'::regclass
+  ) then
+    alter table writeoff_requests
+      add constraint unique_photo_hash unique (photo_hash);
+  end if;
+end
+$$;
