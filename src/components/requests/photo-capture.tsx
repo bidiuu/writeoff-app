@@ -51,12 +51,12 @@ export function PhotoCapture({ onFile, disabled }: PhotoCaptureProps) {
 
     if (!ALLOWED_TYPES.includes(raw.type)) {
       setError("Разрешены только JPEG, PNG, WebP");
-      onFile(null, false);
+      onFile(null, false, null);
       return;
     }
     if (raw.size > MAX_MB * 1024 * 1024) {
       setError(`Файл превышает ${MAX_MB} МБ`);
-      onFile(null, false);
+      onFile(null, false, null);
       return;
     }
 
